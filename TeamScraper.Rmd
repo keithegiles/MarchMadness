@@ -1,0 +1,465 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r input webpage, eval = T}
+library(rvest)
+webpage <- read_html("http://www.espn.com/mens-college-basketball/teams")
+Teams <- webpage %>% html_nodes(".h5") %>% html_text(trim = T)
+Nodes <- webpage %>% html_node((".h5"))
+Content <- xml_contents(webpage)[2] %>% html_text()
+First <- substr(x = Content,start = 119744,stop = 120369)
+Last <- substr(x = Content, start = 340000, stop = 344340)
+```
+
+```{r regex, eval = T}
+MensTeamsRaw <- substr(x = Content, start = 119744, stop = 344340)
+MensTeamsStripped <- gsub("\"n\"","",MensTeamsRaw)
+MensTeamsStripped <- gsub("\"t\"","",MensTeamsStripped)
+MensTeamsStripped <- gsub("\\[","",MensTeamsStripped)
+MensTeamsStripped <- gsub("\\{:","",MensTeamsStripped)
+MensTeamsStripped <- gsub("basketball/team/stats/_/","",MensTeamsStripped)
+MensTeamsStripped <- gsub("basektabll/team/schedule/_/","",MensTeamsStripped)
+MensTeamsStripped <- gsub("\",\"e\":0},","",MensTeamsStripped)
+MensTeamsStripped <- gsub("\\\\","",MensTeamsStripped)
+#MensTeamsStripped
+```
+
+```{r regex part2, eval = T}
+library(stringr)
+IDpositions <- str_locate_all(string = MensTeamsStripped, pattern = "/id/")
+IDpositions <- data.frame(IDpositions)
+IDpositions$end <- IDpositions$end + 4
+IDpositions
+```
+
+
+```{r generate team id list, eval = T}
+tmp <- NULL
+for (i in (1:10)){
+  tmp[i] <- substr(MensTeamsStripped, start = IDpositions[i,1], stop = IDpositions[i,2])
+}
+tmp <- gsub("[^0-9]", "", tmp) 
+Numbers <- as.numeric(tmp)
+Numbers <- data.frame(Numbers)
+TeamIDs <- data.frame(table(Numbers))
+TeamIDs <- as.numeric(as.character(TeamIDs$Numbers))
+TeamIDs
+```
+
+```{r capture each teams page, eval = T}
+tmp <- NULL
+for (i in (1:4)){
+  tmp[[i]] <- read_html(paste0("http://www.espn.com/mens-college-basketball/team/schedule/_/id/",TeamIDs[i]))
+}
+TeamPages <- tmp
+rm(tmp)
+```
+
+```{r team lists, eval = T}
+EastTeams <- c("DUKE","NCCU","VCU","UCF","MSST","LIB","VT","SLU","MD","BELMONT","LSU","YALE","LOU","MINN","MSU","BRAD")
+EastNumbers <- c("150","2428","2670","2116","344","2335","259","139","120","2057","99","43","97","135","127","71")
+WestTeams <- c("GONZAGA","FDU","SYRACUSE","BAYLOR","MARQUETTE","MURRAY STATE","FLORIDA STATE","VERMONT","BUFFALO","ASU","TEXAS TECH","N KENTUCKY","NEVADA","FLORIDA","MICHIGAN","MONTANA")
+WestNumbers <- c("2250","161","183","239","269","93","52","261","2084","9","2641","94","2440","57","130","149")
+SouthTeams <- c('UVA','WEBB','MISS','OKLA','WIS','ORE','KSU','UCI','VILL','SMC','PUR','ODU','CIN','IOWA','TENN','COLG')
+SouthNumbers <- c("258","2241","145","201","275","2483","2306","300","222","2608","2509","295","2132","2294","2633","2142")
+MidwestTeams <- c('UNC','IONA','USU','WASH','AUB','NMSU','KU','NE','Iowa','Ohio','Hou','GEORGIA','Wof','seton','kentucky','christian')
+MidwestNumbers <- c('153','314','328','264','2','166','2305','158','66','194','248','2247','2747','2550','96','2000')
+length(MidwestNumbers)
+length(MidwestTeams)
+```
+
+
+
+```{r team stats, eval = T}
+EastTeamStats <- matrix(0,1,13)
+EastTeamStats <- data.frame(EastTeamStats)
+for (k in 1:length(EastNumbers)){
+TeamScoresWebsite <- read_html(paste0("http://www.espn.com/mens-college-basketball/team/schedule/_/id/",EastNumbers[k])) 
+TeamScoresContent <- html_nodes(TeamScoresWebsite, ".ml4") %>% xml_contents() %>%  html_attrs() 
+tmp <- NULL
+  for (z in 3:length(TeamScoresContent)){
+  tmp[z] <- substr(x = TeamScoresContent[z], start = 11,stop = 75)
+  }
+TeamGames <- tmp
+rm(tmp)
+BoxScores <- gsub("/game","/boxscore",TeamGames)
+BoxScores <- BoxScores[3:length(BoxScores)]
+#iterate through each teams schedule
+start <- 1
+stop <- length(BoxScores)
+DiffStats <- matrix(0,1,13)
+DiffStats <- data.frame(DiffStats)
+    for (i in start:stop){
+      FG2 <- read_html(BoxScores[i]) %>% html_nodes(".fg") %>% html_text(trim = T)
+      FG3 <- read_html(BoxScores[i]) %>% html_nodes(xpath = '//*[@class="3pt"]') %>% html_text(trim =   T)
+      FT  <- read_html(BoxScores[i]) %>% html_nodes(".ft") %>% html_text(trim = T)
+      OREB <- read_html(BoxScores[i]) %>% html_nodes(".oreb") %>% html_text(trim = T)
+      DREB<- read_html(BoxScores[i]) %>% html_nodes(".dreb") %>% html_text(trim = T)
+      AST  <- read_html(BoxScores[i]) %>% html_nodes(".ast") %>% html_text(trim = T)
+      STL <- read_html(BoxScores[i]) %>% html_nodes(".stl") %>% html_text(trim = T)
+      TO <- read_html(BoxScores[i]) %>% html_nodes(".to") %>% html_text(trim = T)
+      PF  <- read_html(BoxScores[i]) %>% html_nodes(".pf") %>% html_text(trim = T)
+      PTS <- read_html(BoxScores[i]) %>% html_nodes(".pts") %>% html_text(trim=T)
+      Team <- read_html(BoxScores[i]) %>% html_nodes(".team") %>% html_text(trim=T)
+      tmpStats <- cbind(FG2,FG3,FT,OREB,DREB,AST,STL,TO,PF,PTS) %>% as.data.frame()
+      tmpStats <- tmpStats[2:nrow(tmpStats),]
+      row.names(tmpStats) <- seq(1:nrow(tmpStats))
+      AwayBreaks <- which(tmpStats$FG2 == "FG")[2]
+      AwayStats <- tmpStats[AwayBreaks-2,]
+      #foo <- data.frame(do.call('rbind', strsplit(as.character(df$FOO),'|',fixed=TRUE)))
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FG2), split = "-", fixed =    T)))
+      colnames(tmp) <- c("FGM","FGA")
+      AwayStats <- cbind(AwayStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FG3),split= "-",fixed =      T)))
+      colnames(tmp) <- cbind("FG3M","FG3A")
+      AwayStats <- cbind(AwayStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FT),split= "-",fixed =      T)))
+      colnames(tmp) <- c("FTM","FTA")
+      AwayStats <- cbind(AwayStats,tmp)
+      AwayStats <- AwayStats[c(11:16,4:10)]
+      AwayStats[1:13] <- lapply(AwayStats[1:13], function(x) as.numeric(as.character(x))) 
+      AwayStats$Team <- Team[1]
+      #get the HomeStats
+      HomeStats <- tmpStats[nrow(tmpStats)-1,]
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FG2), split = "-", fixed =   T)))
+      colnames(tmp) <- c("FGM","FGA")
+      HomeStats <- cbind(HomeStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FG3),split= "-",fixed =     T)))
+      colnames(tmp) <- cbind("FG3M","FG3A")
+      HomeStats <- cbind(HomeStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FT),split= "-",fixed =      T)))
+      colnames(tmp) <- c("FTM","FTA")
+      HomeStats <- cbind(HomeStats,tmp)
+      HomeStats <- HomeStats[c(11:16,4:10)]
+      HomeStats[1:13] <- lapply(HomeStats[1:13], function(x) as.numeric(as.character(x)))
+      HomeStats$Team <- Team[2]
+      tmp <- rbind(HomeStats,AwayStats)
+      ReferenceTeam <- grep(pattern = EastTeams[k],x = tmp$Team,ignore.case = T)
+      tmp <- tmp[1:13]
+      alt1 <- data.matrix(tmp[1,])
+      alt2 <- data.matrix(tmp[2,])
+      tmp1 <- alt1-alt2
+      if(ReferenceTeam==2){tmp1 <- (alt2-alt1)}
+      colnames(DiffStats) <- colnames(tmp1)
+      DiffStats <- rbind(DiffStats, tmp1)
+   }
+colnames(EastTeamStats) <- colnames(DiffStats)
+EastTeamStats <- rbind(EastTeamStats,colMeans(DiffStats))
+EastTeamStats <- tail(EastTeamStats,16)
+}
+```
+
+```{r team stats, eval = T}
+WestTeamStats <- matrix(0,1,13)
+WestTeamStats <- data.frame(WestTeamStats)
+for (k in 1:length(WestNumbers)){
+TeamScoresWebsite <- read_html(paste0("http://www.espn.com/mens-college-basketball/team/schedule/_/id/",WestNumbers[k])) 
+TeamScoresContent <- html_nodes(TeamScoresWebsite, ".ml4") %>% xml_contents() %>%  html_attrs() 
+tmp <- NULL
+  for (z in 3:length(TeamScoresContent)){
+  tmp[z] <- substr(x = TeamScoresContent[z], start = 11,stop = 75)
+  }
+TeamGames <- tmp
+rm(tmp)
+BoxScores <- gsub("/game","/boxscore",TeamGames)
+BoxScores <- BoxScores[3:length(BoxScores)]
+#iterate through each teams schedule
+start <- 10
+stop <- length(BoxScores)
+DiffStats <- matrix(0,1,13)
+DiffStats <- data.frame(DiffStats)
+    for (i in start:stop){
+      FG2 <- read_html(BoxScores[i]) %>% html_nodes(".fg") %>% html_text(trim = T)
+      FG3 <- read_html(BoxScores[i]) %>% html_nodes(xpath = '//*[@class="3pt"]') %>% html_text(trim =   T)
+      FT  <- read_html(BoxScores[i]) %>% html_nodes(".ft") %>% html_text(trim = T)
+      OREB <- read_html(BoxScores[i]) %>% html_nodes(".oreb") %>% html_text(trim = T)
+      DREB<- read_html(BoxScores[i]) %>% html_nodes(".dreb") %>% html_text(trim = T)
+      AST  <- read_html(BoxScores[i]) %>% html_nodes(".ast") %>% html_text(trim = T)
+      STL <- read_html(BoxScores[i]) %>% html_nodes(".stl") %>% html_text(trim = T)
+      TO <- read_html(BoxScores[i]) %>% html_nodes(".to") %>% html_text(trim = T)
+      PF  <- read_html(BoxScores[i]) %>% html_nodes(".pf") %>% html_text(trim = T)
+      PTS <- read_html(BoxScores[i]) %>% html_nodes(".pts") %>% html_text(trim=T)
+      Team <- read_html(BoxScores[i]) %>% html_nodes(".team") %>% html_text(trim=T)
+      tmpStats <- cbind(FG2,FG3,FT,OREB,DREB,AST,STL,TO,PF,PTS) %>% as.data.frame()
+      tmpStats <- tmpStats[2:nrow(tmpStats),]
+      row.names(tmpStats) <- seq(1:nrow(tmpStats))
+      AwayBreaks <- which(tmpStats$FG2 == "FG")[2]
+      AwayStats <- tmpStats[AwayBreaks-2,]
+      #foo <- data.frame(do.call('rbind', strsplit(as.character(df$FOO),'|',fixed=TRUE)))
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FG2), split = "-", fixed =    T)))
+      colnames(tmp) <- c("FGM","FGA")
+      AwayStats <- cbind(AwayStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FG3),split= "-",fixed =      T)))
+      colnames(tmp) <- cbind("FG3M","FG3A")
+      AwayStats <- cbind(AwayStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FT),split= "-",fixed =      T)))
+      colnames(tmp) <- c("FTM","FTA")
+      AwayStats <- cbind(AwayStats,tmp)
+      AwayStats <- AwayStats[c(11:16,4:10)]
+      AwayStats[1:13] <- lapply(AwayStats[1:13], function(x) as.numeric(as.character(x))) 
+      AwayStats$Team <- Team[1]
+      #get the HomeStats
+      HomeStats <- tmpStats[nrow(tmpStats)-1,]
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FG2), split = "-", fixed =   T)))
+      colnames(tmp) <- c("FGM","FGA")
+      HomeStats <- cbind(HomeStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FG3),split= "-",fixed =     T)))
+      colnames(tmp) <- cbind("FG3M","FG3A")
+      HomeStats <- cbind(HomeStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FT),split= "-",fixed =      T)))
+      colnames(tmp) <- c("FTM","FTA")
+      HomeStats <- cbind(HomeStats,tmp)
+      HomeStats <- HomeStats[c(11:16,4:10)]
+      HomeStats[1:13] <- lapply(HomeStats[1:13], function(x) as.numeric(as.character(x)))
+      HomeStats$Team <- Team[2]
+      tmp <- rbind(HomeStats,AwayStats)
+      ReferenceTeam <- grep(pattern = WestTeams[k],x = tmp$Team,ignore.case = T)
+      tmp <- tmp[1:13]
+      alt1 <- data.matrix(tmp[1,])
+      alt2 <- data.matrix(tmp[2,])
+      tmp1 <- alt1-alt2
+      if(ReferenceTeam==2){tmp1 <- (alt2-alt1)}
+      colnames(DiffStats) <- colnames(tmp1)
+      DiffStats <- rbind(DiffStats, tmp1)
+   }
+colnames(WestTeamStats) <- colnames(DiffStats)
+WestTeamStats <- rbind(WestTeamStats,colMeans(DiffStats))
+WestTeamStats <- tail(WestTeamStats,16)
+}
+```
+
+
+```{r Regional Net Stats, eval = T}
+EastTeamNetStats <- data.frame(matrix(nrow = 0,ncol = 13))
+tmp <- NULL
+for (i in seq(from=1,to=16,by=2)){
+  tmp <- EastTeamStats[i,] - EastTeamStats[i+1,]
+  colnames(EastTeamNetStats) <- colnames(tmp)
+  EastTeamNetStats <- rbind(EastTeamNetStats,tmp)
+}
+write.table(EastTeamNetStats, "EastNetStats", sep = "\t")
+write.table(EastTeamStats,"EastStats",sep="\t")
+```
+
+
+
+```{r Regional West Net Stats, eval = T}
+WestTeamNetStats <- data.frame(matrix(nrow = 0,ncol = 13))
+tmp <- NULL
+for (i in seq(from=1,to=16,by=2)){
+  tmp <- WestTeamStats[i,] - WestTeamStats[i+1,]
+  colnames(WestTeamNetStats) <- colnames(tmp)
+  WestTeamNetStats <- rbind(WestTeamNetStats,tmp)
+}
+write.table(WestTeamNetStats, "WestNetStats", sep = "\t")
+write.table(WestTeamStats,"WestStats",sep="\t")
+```
+
+
+```{r team stats, eval = T}
+#SouthTeamStats <- matrix(0,1,13)
+#SouthTeamStats <- data.frame(SouthTeamStats)
+for (k in 11:length(SouthNumbers)){
+TeamScoresWebsite <- read_html(paste0("http://www.espn.com/mens-college-basketball/team/schedule/_/id/",SouthNumbers[k])) 
+TeamScoresContent <- html_nodes(TeamScoresWebsite, ".ml4") %>% xml_contents() %>%  html_attrs() 
+tmp <- NULL
+  for (z in 3:length(TeamScoresContent)){
+  tmp[z] <- substr(x = TeamScoresContent[z], start = 11,stop = 75)
+  }
+TeamGames <- tmp
+rm(tmp)
+BoxScores <- gsub("/game","/boxscore",TeamGames)
+BoxScores <- BoxScores[3:length(BoxScores)]
+#iterate through each teams schedule
+start <- 10
+stop <- length(BoxScores)
+DiffStats <- matrix(0,1,13)
+DiffStats <- data.frame(DiffStats)
+    for (i in start:stop){
+      FG2 <- read_html(BoxScores[i]) %>% html_nodes(".fg") %>% html_text(trim = T)
+      FG3 <- read_html(BoxScores[i]) %>% html_nodes(xpath = '//*[@class="3pt"]') %>% html_text(trim =   T)
+      FT  <- read_html(BoxScores[i]) %>% html_nodes(".ft") %>% html_text(trim = T)
+      OREB <- read_html(BoxScores[i]) %>% html_nodes(".oreb") %>% html_text(trim = T)
+      DREB<- read_html(BoxScores[i]) %>% html_nodes(".dreb") %>% html_text(trim = T)
+      AST  <- read_html(BoxScores[i]) %>% html_nodes(".ast") %>% html_text(trim = T)
+      STL <- read_html(BoxScores[i]) %>% html_nodes(".stl") %>% html_text(trim = T)
+      TO <- read_html(BoxScores[i]) %>% html_nodes(".to") %>% html_text(trim = T)
+      PF  <- read_html(BoxScores[i]) %>% html_nodes(".pf") %>% html_text(trim = T)
+      PTS <- read_html(BoxScores[i]) %>% html_nodes(".pts") %>% html_text(trim=T)
+      Team <- read_html(BoxScores[i]) %>% html_nodes(".team") %>% html_text(trim=T)
+      tmpStats <- cbind(FG2,FG3,FT,OREB,DREB,AST,STL,TO,PF,PTS) %>% as.data.frame()
+      tmpStats <- tmpStats[2:nrow(tmpStats),]
+      row.names(tmpStats) <- seq(1:nrow(tmpStats))
+      AwayBreaks <- which(tmpStats$FG2 == "FG")[2]
+      AwayStats <- tmpStats[AwayBreaks-2,]
+      #foo <- data.frame(do.call('rbind', strsplit(as.character(df$FOO),'|',fixed=TRUE)))
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FG2), split = "-", fixed =    T)))
+      colnames(tmp) <- c("FGM","FGA")
+      AwayStats <- cbind(AwayStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FG3),split= "-",fixed =      T)))
+      colnames(tmp) <- cbind("FG3M","FG3A")
+      AwayStats <- cbind(AwayStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FT),split= "-",fixed =      T)))
+      colnames(tmp) <- c("FTM","FTA")
+      AwayStats <- cbind(AwayStats,tmp)
+      AwayStats <- AwayStats[c(11:16,4:10)]
+      AwayStats[1:13] <- lapply(AwayStats[1:13], function(x) as.numeric(as.character(x))) 
+      AwayStats$Team <- Team[1]
+      #get the HomeStats
+      HomeStats <- tmpStats[nrow(tmpStats)-1,]
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FG2), split = "-", fixed =   T)))
+      colnames(tmp) <- c("FGM","FGA")
+      HomeStats <- cbind(HomeStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FG3),split= "-",fixed =     T)))
+      colnames(tmp) <- cbind("FG3M","FG3A")
+      HomeStats <- cbind(HomeStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FT),split= "-",fixed =      T)))
+      colnames(tmp) <- c("FTM","FTA")
+      HomeStats <- cbind(HomeStats,tmp)
+      HomeStats <- HomeStats[c(11:16,4:10)]
+      HomeStats[1:13] <- lapply(HomeStats[1:13], function(x) as.numeric(as.character(x)))
+      HomeStats$Team <- Team[2]
+      tmp <- rbind(HomeStats,AwayStats)
+      ReferenceTeam <- grep(pattern = SouthTeams[k],x = tmp$Team,ignore.case = T)
+      tmp <- tmp[1:13]
+      alt1 <- data.matrix(tmp[1,])
+      alt2 <- data.matrix(tmp[2,])
+      tmp1 <- alt1-alt2
+      if(ReferenceTeam==2){tmp1 <- (alt2-alt1)}
+      colnames(DiffStats) <- colnames(tmp1)
+      DiffStats <- rbind(DiffStats, tmp1)
+   }
+colnames(SouthTeamStats) <- colnames(DiffStats)
+SouthTeamStats <- rbind(SouthTeamStats,colMeans(DiffStats))
+SouthTeamStats <- tail(SouthTeamStats,16)
+}
+```
+
+
+```{r Regional West Net Stats, eval = T}
+SouthTeamNetStats <- data.frame(matrix(nrow = 0,ncol = 13))
+tmp <- NULL
+for (i in seq(from=1,to=16,by=2)){
+  tmp <- SouthTeamStats[i,] - SouthTeamStats[i+1,]
+  colnames(SouthTeamNetStats) <- colnames(tmp)
+  SouthTeamNetStats <- rbind(SouthTeamNetStats,tmp)
+}
+write.table(SouthTeamNetStats, "SouthNetStats", sep = "\t")
+write.table(SouthTeamStats,"SouthStats",sep="\t")
+```
+
+
+```{r team stats, eval = T}
+#MidwestTeamStats <- matrix(0,1,13)
+#MidwestTeamStats <- data.frame(MidwestTeamStats)
+for (k in 14:16){
+TeamScoresWebsite <- read_html(paste0("http://www.espn.com/mens-college-basketball/team/schedule/_/id/",MidwestNumbers[k])) 
+TeamScoresContent <- html_nodes(TeamScoresWebsite, ".ml4") %>% xml_contents() %>%  html_attrs() 
+tmp <- NULL
+  for (z in 3:length(TeamScoresContent)){
+  tmp[z] <- substr(x = TeamScoresContent[z], start = 11,stop = 75)
+  }
+TeamGames <- tmp
+rm(tmp)
+BoxScores <- gsub("/game","/boxscore",TeamGames)
+BoxScores <- BoxScores[3:length(BoxScores)]
+#iterate through each teams schedule
+start <- 10
+stop <- length(BoxScores)
+DiffStats <- matrix(0,1,13)
+DiffStats <- data.frame(DiffStats)
+    for (i in start:stop){
+      FG2 <- read_html(BoxScores[i]) %>% html_nodes(".fg") %>% html_text(trim = T)
+      FG3 <- read_html(BoxScores[i]) %>% html_nodes(xpath = '//*[@class="3pt"]') %>%       html_text(trim =   T)
+      FT  <- read_html(BoxScores[i]) %>% html_nodes(".ft") %>% html_text(trim = T)
+      OREB <- read_html(BoxScores[i]) %>% html_nodes(".oreb") %>% html_text(trim = T)
+      DREB<- read_html(BoxScores[i]) %>% html_nodes(".dreb") %>% html_text(trim = T)
+      AST  <- read_html(BoxScores[i]) %>% html_nodes(".ast") %>% html_text(trim = T)
+      STL <- read_html(BoxScores[i]) %>% html_nodes(".stl") %>% html_text(trim = T)
+      TO <- read_html(BoxScores[i]) %>% html_nodes(".to") %>% html_text(trim = T)
+      PF  <- read_html(BoxScores[i]) %>% html_nodes(".pf") %>% html_text(trim = T)
+      PTS <- read_html(BoxScores[i]) %>% html_nodes(".pts") %>% html_text(trim=T)
+      Team <- read_html(BoxScores[i]) %>% html_nodes(".team") %>% html_text(trim=T)
+      tmpStats <- cbind(FG2,FG3,FT,OREB,DREB,AST,STL,TO,PF,PTS) %>% as.data.frame()
+      tmpStats <- tmpStats[2:nrow(tmpStats),]
+      row.names(tmpStats) <- seq(1:nrow(tmpStats))
+      AwayBreaks <- which(tmpStats$FG2 == "FG")[2]
+      AwayStats <- tmpStats[AwayBreaks-2,]
+      #foo <- data.frame(do.call('rbind', strsplit(as.character(df$FOO),'|',fixed=TRUE)))
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FG2), split = "-", fixed =    T)))
+      colnames(tmp) <- c("FGM","FGA")
+      AwayStats <- cbind(AwayStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FG3),split= "-",fixed =      T)))
+      colnames(tmp) <- cbind("FG3M","FG3A")
+      AwayStats <- cbind(AwayStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(AwayStats$FT),split= "-",fixed =      T)))
+      colnames(tmp) <- c("FTM","FTA")
+      AwayStats <- cbind(AwayStats,tmp)
+      AwayStats <- AwayStats[c(11:16,4:10)]
+      AwayStats[1:13] <- lapply(AwayStats[1:13], function(x) as.numeric(as.character(x))) 
+      AwayStats$Team <- Team[1]
+      #get the HomeStats
+      HomeStats <- tmpStats[nrow(tmpStats)-1,]
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FG2), split = "-", fixed =   T)))
+      colnames(tmp) <- c("FGM","FGA")
+      HomeStats <- cbind(HomeStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FG3),split= "-",fixed =     T)))
+      colnames(tmp) <- cbind("FG3M","FG3A")
+      HomeStats <- cbind(HomeStats,tmp)
+      rm(tmp)
+      tmp <- data.frame(do.call('rbind',strsplit(x = as.character(HomeStats$FT),split= "-",fixed =      T)))
+      colnames(tmp) <- c("FTM","FTA")
+      HomeStats <- cbind(HomeStats,tmp)
+      HomeStats <- HomeStats[c(11:16,4:10)]
+      HomeStats[1:13] <- lapply(HomeStats[1:13], function(x) as.numeric(as.character(x)))
+      HomeStats$Team <- Team[2]
+      tmp <- rbind(HomeStats,AwayStats)
+      ReferenceTeam <- grep(pattern = MidwestTeams[k],x = tmp$Team,ignore.case = T)
+      tmp <- tmp[1:13]
+      alt1 <- data.matrix(tmp[1,])
+      alt2 <- data.matrix(tmp[2,])
+      tmp1 <- alt1-alt2
+      if(ReferenceTeam==2){tmp1 <- (alt2-alt1)}
+      colnames(DiffStats) <- colnames(tmp1)
+      DiffStats <- rbind(DiffStats, tmp1)
+   }
+colnames(MidwestTeamStats) <- colnames(DiffStats)
+MidwestTeamStats <- rbind(MidwestTeamStats,colMeans(DiffStats))
+MidwestTeamStats <- tail(MidwestTeamStats,16)
+}
+```
+
+
+
+```{r Regional West Net Stats, eval = T}
+MidwestTeamNetStats <- data.frame(matrix(nrow = 0,ncol = 13))
+tmp <- NULL
+for (i in seq(from=1,to=16,by=2)){
+  tmp <- MidwestTeamStats[i,] - MidwestTeamStats[i+1,]
+  colnames(MidwestTeamNetStats) <- colnames(tmp)
+  MidwestTeamNetStats <- rbind(MidwestTeamNetStats,tmp)
+}
+write.table(MidwestTeamNetStats, "MidwestNetStats", sep = "\t")
+write.table(MidwestTeamStats,"MidwestStats",sep="\t")
+```

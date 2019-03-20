@@ -1,0 +1,142 @@
+---
+title: "ncaa"
+author: "Keith E Giles"
+date: "3/6/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r import training set, eval = F}
+TrainingSet <- read.table("./RegularSeasonDetailedResults.csv", sep = ",", header = T)
+```
+
+```{r calculate rolling mean, eval = F}
+TrainingSet <- TrainingSet[order(TrainingSet$WTeamID,TrainingSet$Season),]
+TrainingSet <- TrainingSet[order(TrainingSet$Season, TrainingSet$DayNum),]
+head(TrainingSet)
+```
+
+```{r WinningTeamPerspective, eval = F}
+WinningTeam <- TrainingSet
+tmp <- matrix(0,82041,13)
+for (i in (9:21)){
+  tmp[,i-8] <- WinningTeam[,i]-WinningTeam[,i+13]
+}
+tmp <- data.frame(tmp)
+colnames(tmp) <- paste0("Delta",colnames(TrainingSet[9:21]))
+colnames(tmp) <- gsub("W","",colnames(tmp))
+WinningTeam <- tmp
+rm(tmp)
+WinningTeam <- cbind(TrainingSet[1:8],WinningTeam)
+WinningTeam$NetScore <- WinningTeam$WScore - WinningTeam$LScore
+WinningTeam <- subset(WinningTeam, select = -c(WScore, LScore))
+WinningTeam$Team <- WinningTeam$WTeamID
+WinningTeam <- subset(WinningTeam, select = -c(WTeamID,LTeamID))
+head(WinningTeam)
+```
+```{r LosingTeamPerspective, eval = F}
+LosingTeam <- TrainingSet
+tmp <- matrix(0,82041,13)
+for (i in (9:21)){
+  tmp[,i-8] <- LosingTeam[,i+13] - LosingTeam[,i]
+}
+tmp <- data.frame(tmp)
+colnames(tmp) <- paste0("Delta",colnames(TrainingSet[9:21]))
+colnames(tmp) <- gsub("W","",colnames(tmp))
+LosingTeam <- tmp
+rm(tmp)
+LosingTeam <- cbind(TrainingSet[1:8],LosingTeam)
+LosingTeam$NetScore <- LosingTeam$LScore - LosingTeam$WScore
+LosingTeam <- subset(LosingTeam, select = -c(WScore, LScore))
+LosingTeam$Team <- LosingTeam$LTeamID
+LosingTeam <- subset(LosingTeam, select = -c(WTeamID,LTeamID))
+head(LosingTeam)
+```
+
+```{r cat WinningAndLosingTeams and drop fields, eval = F}
+AllTeams <- rbind(WinningTeam,LosingTeam)
+#sort by team/date
+AllTeams <- AllTeams[order(AllTeams$Team,AllTeams$Season,AllTeams$DayNum),]
+AllTeams <- group_by(AllTeams, Team) %>% mutate(GameNumber =row_number()) %>% ungroup()
+```
+
+
+
+```{r calcualte MA5 for each team,eval = F}
+library(zoo)
+AllTeamsMA5 <- AllTeams
+AllTeamsMA5[4:18] <- lapply(AllTeamsMA5[4:18], function(x) rollmean(x = x,k = 10,fill = NA, na.pad = T, align = "right"))
+#AllTeamsMA5[4:18] <- lapply(AllTeamsMA5[4:18], function(x) rollapply(data = x,width = list(c(-4,-3,-2,-1)),FUN=mean, na.rm=T,fill = NA))
+#x <- data.frame("vals" = round(x = runif(n = 10,min = 1,max = 9),digits = 0))
+#y <- x %>% mutate(med5 = rollapply(data = vals, width = list(c(-4,-3,-2,-1)),FUN = mean, na.rm = TRUE,fill = NA))
+colnames(AllTeamsMA5)[4:18] <- paste0("MA5",colnames(AllTeamsMA5)[4:18])
+AllTeamsMA5$ActualNetScore <- AllTeams$NetScore
+AllTeamsMA5$Location <- ifelse(AllTeamsMA5$WLoc == "N","N","X")
+AllTeamsMA5$Location <- ifelse(AllTeamsMA5$WLoc == "H" & AllTeamsMA5$ActualNetScore > 0, "H",AllTeamsMA5$Location)
+AllTeamsMA5$Location <- ifelse(AllTeamsMA5$WLoc == "H" & AllTeamsMA5$ActualNetScore < 0, "A",AllTeamsMA5$Location)
+AllTeamsMA5$Location <- ifelse(AllTeamsMA5$WLoc == "A" & AllTeamsMA5$ActualNetScore > 0, "A",AllTeamsMA5$Location)
+AllTeamsMA5$Location <- ifelse(AllTeamsMA5$WLoc == "A" & AllTeamsMA5$ActualNetScore < 0, "H",AllTeamsMA5$Location)
+#drop game number and filter 
+AllTeamsMA5 <- subset(AllTeamsMA5, GameNumber >= 10, select = -c(GameNumber))
+#keep only Home and Neutral Site games
+AllTeamsMA5$Winner <- ifelse(AllTeamsMA5$ActualNetScore > 0, 1,0)
+AllTeamsMA5$Location <- as.factor(AllTeamsMA5$Location)
+colnames(AllTeamsMA5)
+```
+
+```{r generate a dev set, eval = F}
+DevSet <- AllTeamsMA5
+DevSet <- DevSet[c(22,4:18,21)]
+colnames(DevSet)
+```
+
+
+```{r alter columns to match new data, eval = T}
+DevSet <- DevSet[c(1,3:11,13,12,16,17)]
+EastTeamStats <- subset(EastTeamStats, select = -c(PF))
+colnames(DevSet) <- c("Winner",colnames(EastTeamStats),"Location")
+colnames(DevSet)
+head(EastTeamStats)
+```
+
+
+```{r create train/test, eval = F}
+set.seed(1)
+RandomDevSet <- DevSet[sample(nrow(DevSet)),]
+Train <- head(RandomDevSet, nrow(RandomDevSet)*.9)
+Test <- tail(RandomDevSet, nrow(RandomDevSet)*.1)
+```
+
+
+```{r logistic regression, eval = F}
+logit1 <- glm(Winner ~ . , data = Train, family = binomial())
+PredictLogit1 <- predict(logit1, Test[2:14], type = "response")
+SummaryLogit1 <- cbind(Test[c(1)],PredictLogit1)
+SummaryLogit1 <- data.frame(SummaryLogit1)
+colnames(SummaryLogit1) <- c("Actual","Prob")
+SummaryLogit1$Prediction <- ifelse(SummaryLogit1$Prob > .5, 1, 0)
+SummaryLogit1$Eval <- ifelse(SummaryLogit1$Actual == SummaryLogit1$Prediction, 1, 0)
+paste0("Accuracy:", sum(SummaryLogit1$Eval)/nrow(SummaryLogit1)*100)
+```
+
+```{r import and predict East, Eval = T}
+#EastTeamNetStats <- read.table("EastNetStats", sep ="\t", header=T)
+tmp1 <- WestTeamStats[1,]-MidwestTeamStats[1,]
+tmp2 <- SouthTeamStats[1,]-MidwestTeamStats[15,]
+#tmp3 <- EastTeamStats[9,]-EastTeamStats[11,]
+#tmp4 <- EastTeamStats[13,]-EastTeamStats[15,]
+tmp1$Location <- as.factor(as.character("N"))
+tmp2$Location <- as.factor(as.character("N"))
+#tmp3$Location <- as.factor(as.character("N"))
+#tmp4$Location <- as.factor(as.character("N"))
+predict(logit1,tmp1,type="response")
+predict(logit1,tmp2,type="response")
+#Epredict(logit1,tmp3,type="response")
+#predict(logit1,tmp4,type="response")
+
+```
+
+
